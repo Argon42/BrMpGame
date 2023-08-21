@@ -1,19 +1,14 @@
-using BrMpGame.Models;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+
+namespace BrMpGame;
 
 public class ApplicationContext : DbContext
 {
-    private readonly IConfiguration _configuration;
-    public DbSet<User> Users { get; set; }
+    public DbSet<IdentityUser> Users { get; set; } = default!;
     
     public ApplicationContext(IConfiguration configuration)
     {
-        _configuration = configuration;
         Database.EnsureCreated();
-    }
-
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        optionsBuilder.UseNpgsql(_configuration["DefaultConnection"]);
     }
 }
