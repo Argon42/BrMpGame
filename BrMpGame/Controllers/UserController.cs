@@ -10,11 +10,15 @@ public class UserController : ControllerBase
 {
     private readonly UserManager<AppUser> _userManager;
     private readonly SignInManager<AppUser> _signInManager;
+    private readonly ITokenService _tokenService;
+    private DataContext _context;
 
-    public UserController(UserManager<AppUser> userManager, SignInManager<AppUser> signInManager)
+    public UserController(UserManager<AppUser> userManager, SignInManager<AppUser> signInManager, ITokenService tokenService, DataContext context)
     {
         _userManager = userManager;
         _signInManager = signInManager;
+        _tokenService = tokenService;
+        _context = context;
     }
 
     [AllowAnonymous] // Отключаем авторизацию для этого метода
@@ -31,10 +35,8 @@ public class UserController : ControllerBase
                 await _signInManager.SignInAsync(user, isPersistent: false);
                 return Ok(new { Message = "Registration successful" });
             }
-            else
-            {
-                return BadRequest(new { Message = "Registration failed", Errors = result.Errors });
-            }
+
+            return BadRequest(new { Message = "Registration failed", result.Errors });
         }
         return BadRequest(ModelState);
     }
