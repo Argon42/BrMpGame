@@ -97,10 +97,14 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseRouting();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.UseCors("cors");
 app.MapControllers();
+
+ApplicationConfiguration.CreateDefaultRolesAndUsers(app.Services);
 
 app.Run();

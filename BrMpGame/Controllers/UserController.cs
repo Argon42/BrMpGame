@@ -1,72 +1,171 @@
-﻿using BrMpGame.Models;
+﻿using System.IdentityModel.Tokens.Jwt;
+using BrMpGame;
+using BrMpGame.Extensions;
+using BrMpGame.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
-namespace BrMpGame.Controllers;
-
-[Authorize] // Добавляем авторизацию ко всем методам контроллера
-public class UserController : ControllerBase
+[ApiController]
+[Route("accounts")]
+public class AccountsController : ControllerBase
 {
     private readonly UserManager<AppUser> _userManager;
-    private readonly SignInManager<AppUser> _signInManager;
+    private readonly DataContext _context;
     private readonly ITokenService _tokenService;
-    private DataContext _context;
+    private readonly IConfiguration _configuration;
 
-    public UserController(UserManager<AppUser> userManager, SignInManager<AppUser> signInManager, ITokenService tokenService, DataContext context)
+    public AccountsController(ITokenService tokenService, DataContext context, UserManager<AppUser> userManager,
+        IConfiguration configuration)
     {
-        _userManager = userManager;
-        _signInManager = signInManager;
         _tokenService = tokenService;
         _context = context;
+        _userManager = userManager;
+        _configuration = configuration;
     }
 
-    [AllowAnonymous] // Отключаем авторизацию для этого метода
-    [HttpPost("register")]
-    public async Task<IActionResult> Register([FromBody] RegistrationModel model)
+    [HttpPost("login")]
+    public async Task<ActionResult<AuthResponse>> Authenticate([FromBody] AuthRequest request)
     {
-        if (ModelState.IsValid)
+        if (!ModelState.IsValid)
         {
-            var user = new AppUser { UserName = model.Username, Email = model.Email };
-            var result = await _userManager.CreateAsync(user, model.Password);
-
-            if (result.Succeeded)
-            {
-                await _signInManager.SignInAsync(user, isPersistent: false);
-                return Ok(new { Message = "Registration successful" });
-            }
-
-            return BadRequest(new { Message = "Registration failed", result.Errors });
+            return BadRequest(ModelState);
         }
-        return BadRequest(ModelState);
+
+        var managedUser = await _userManager.FindByNameAsync(request.UserName);
+
+        if (managedUser == null)
+        {
+            return BadRequest("Bad credentials");
+        }
+
+        var isPasswordValid = await _userManager.CheckPasswordAsync(managedUser, request.Password);
+
+        if (!isPasswordValid)
+        {
+            return BadRequest("Bad credentials");
+        }
+
+        var user = _context.Users.FirstOrDefault(u => u.UserName == request.UserName);
+
+        if (user is null)
+            return Unauthorized();
+
+        var roleIds = await _context.UserRoles.Where(r => r.UserId == user.Id).Select(x => x.RoleId).ToListAsync();
+        var roles = _context.Roles.Where(x => roleIds.Contains(x.Id)).ToList();
+
+        var accessToken = _tokenService.CreateToken(user, roles);
+        user.RefreshToken = _configuration.GenerateRefreshToken();
+        user.RefreshTokenExpiryTime =
+            DateTime.UtcNow.AddDays(_configuration.GetSection("JwtSettings:RefreshTokenValidityInDays").Get<int>());
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new AuthResponse
+        {
+            Username = user.UserName!,
+            Token = accessToken,
+            RefreshToken = user.RefreshToken,
+        });
     }
 
-    [HttpGet("public")]
-    [AllowAnonymous]
-    public IActionResult PublicData()
+    [HttpPost("register")]
+    public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest request)
     {
-        return Ok(new { Message = "This is public data" });
+        if (!ModelState.IsValid) return BadRequest(request);
+
+        var user = new AppUser
+        {
+            UserName = request.UserName,
+        };
+        var result = await _userManager.CreateAsync(user, request.Password);
+
+        foreach (var error in result.Errors)
+        {
+            ModelState.AddModelError(string.Empty, error.Description);
+        }
+
+        if (!result.Succeeded) return BadRequest(request);
+
+        var findUser = await _context.Users.FirstOrDefaultAsync(x => x.UserName == request.UserName);
+
+        if (findUser == null) throw new Exception($"User {request.UserName} not found");
+
+        await _userManager.AddToRoleAsync(findUser, Roles.User);
+
+        return await Authenticate(new AuthRequest
+        {
+            UserName = request.UserName,
+            Password = request.Password,
+        });
     }
 
-    [HttpGet("user")]
-    [Authorize(Roles = Roles.User)] // Требуем роль "User" для доступа
-    public IActionResult UserData()
+    [HttpPost]
+    [Route("refresh-token")]
+    public async Task<IActionResult> RefreshToken(TokenModel? tokenModel)
     {
-        return Ok(new { Message = "This is user data" });
+        if (tokenModel is null)
+        {
+            return BadRequest("Invalid client request");
+        }
+
+        var accessToken = tokenModel.AccessToken;
+        var refreshToken = tokenModel.RefreshToken;
+        var principal = _configuration.GetPrincipalFromExpiredToken(accessToken);
+
+        if (principal == null)
+        {
+            return BadRequest("Invalid access token or refresh token");
+        }
+
+        var username = principal.Identity!.Name;
+        var user = await _userManager.FindByNameAsync(username!);
+
+        if (user == null || user.RefreshToken != refreshToken || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+        {
+            return BadRequest("Invalid access token or refresh token");
+        }
+
+        var newAccessToken = _configuration.CreateToken(principal.Claims.ToList());
+        var newRefreshToken = _configuration.GenerateRefreshToken();
+
+        user.RefreshToken = newRefreshToken;
+        await _userManager.UpdateAsync(user);
+
+        return new ObjectResult(new
+        {
+            accessToken = new JwtSecurityTokenHandler().WriteToken(newAccessToken),
+            refreshToken = newRefreshToken
+        });
     }
 
-    [HttpGet("admin")]
-    [Authorize(Roles = Roles.Admin)] // Требуем роль "Admin" для доступа
-    public IActionResult AdminData()
+    [Authorize]
+    [HttpPost]
+    [Route("revoke/{username}")]
+    public async Task<IActionResult> Revoke(string username)
     {
-        return Ok(new { Message = "This is admin data" });
+        var user = await _userManager.FindByNameAsync(username);
+        if (user == null) return BadRequest("Invalid user name");
+
+        user.RefreshToken = null;
+        await _userManager.UpdateAsync(user);
+
+        return Ok();
     }
-}
 
+    [Authorize]
+    [HttpPost]
+    [Route("revoke-all")]
+    public async Task<IActionResult> RevokeAll()
+    {
+        var users = _userManager.Users.ToList();
+        foreach (var user in users)
+        {
+            user.RefreshToken = null;
+            await _userManager.UpdateAsync(user);
+        }
 
-public class RegistrationModel
-{
-    public string Username { get; set; } = default!;
-    public string Email { get; set; } = default!;
-    public string Password { get; set; } = default!;
+        return Ok();
+    }
 }
