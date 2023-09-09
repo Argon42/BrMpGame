@@ -1,26 +1,53 @@
-var builder = WebApplication.CreateBuilder(args);
+using BrMpGame;
+using BrMpGame.Extensions;
+using BrMpGame.Features.Accounts;
+using BrMpGame.Services;
+using Microsoft.EntityFrameworkCore;
+using Swashbuckle.AspNetCore.SwaggerUI;
 
-// Add services to the container.
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+ConfigurationManager configuration = builder.Configuration;
 
+builder.Services.AddDbContext<DataContext>(options =>
+    options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddAccount();
+
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddAppAuth(configuration);
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddSwagger();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-builder.Services.AddSingleton<ApplicationContext>();
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Your API v1");
+        c.DisplayRequestDuration();
+        c.DocExpansion(DocExpansion.None);
+        c.EnableValidator(null);
+        c.EnableFilter();
+        c.ShowExtensions();
+        c.SupportedSubmitMethods(SubmitMethod.Get, SubmitMethod.Head, SubmitMethod.Post, SubmitMethod.Put,
+            SubmitMethod.Delete, SubmitMethod.Options, SubmitMethod.Patch);
+    });
 }
 
 app.UseHttpsRedirection();
+app.UseRouting();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+if (configuration["UpdateDatabase"] == "true")
+{
+    await ApplicationConfiguration.CreateDefaultRolesAndUsers(app.Services);
+}
 
 app.Run();
