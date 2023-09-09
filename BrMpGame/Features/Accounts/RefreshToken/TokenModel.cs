@@ -1,4 +1,4 @@
-namespace BrMpGame.Models;
+namespace BrMpGame.Features.Accounts.RefreshToken;
 
 public class TokenModel
 {

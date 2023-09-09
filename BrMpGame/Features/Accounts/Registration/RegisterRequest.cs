@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace BrMpGame.Models;
+namespace BrMpGame.Features.Accounts.Registration;
 
 public class RegisterRequest
 {

@@ -1,4 +1,7 @@
 using BrMpGame;
+using BrMpGame.Extensions;
+using BrMpGame.Features.Accounts;
+using BrMpGame.Services;
 using Microsoft.EntityFrameworkCore;
 using Swashbuckle.AspNetCore.SwaggerUI;
 
@@ -7,6 +10,8 @@ ConfigurationManager configuration = builder.Configuration;
 
 builder.Services.AddDbContext<DataContext>(options =>
     options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddAccount();
 
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddAppAuth(configuration);
@@ -27,7 +32,8 @@ if (app.Environment.IsDevelopment())
         c.EnableValidator(null);
         c.EnableFilter();
         c.ShowExtensions();
-        c.SupportedSubmitMethods(SubmitMethod.Get, SubmitMethod.Head, SubmitMethod.Post, SubmitMethod.Put, SubmitMethod.Delete, SubmitMethod.Options, SubmitMethod.Patch);
+        c.SupportedSubmitMethods(SubmitMethod.Get, SubmitMethod.Head, SubmitMethod.Post, SubmitMethod.Put,
+            SubmitMethod.Delete, SubmitMethod.Options, SubmitMethod.Patch);
     });
 }
 
@@ -37,9 +43,11 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseCors("cors");
 app.MapControllers();
 
-ApplicationConfiguration.CreateDefaultRolesAndUsers(app.Services);
+if (configuration["UpdateDatabase"] == "true")
+{
+    await ApplicationConfiguration.CreateDefaultRolesAndUsers(app.Services);
+}
 
 app.Run();

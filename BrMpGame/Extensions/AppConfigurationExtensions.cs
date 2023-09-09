@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
-namespace BrMpGame;
+namespace BrMpGame.Extensions;
 
 public static class AppConfigurationExtensions
 {

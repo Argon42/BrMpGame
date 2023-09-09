@@ -3,6 +3,8 @@ using BrMpGame.Extensions;
 using BrMpGame.Models;
 using Microsoft.AspNetCore.Identity;
 
+namespace BrMpGame.Services;
+
 public class TokenService : ITokenService
 {
     private readonly IConfiguration _configuration;
@@ -17,7 +19,7 @@ public class TokenService : ITokenService
         JwtSecurityToken token = user
             .CreateClaims(roles)
             .CreateJwtToken(_configuration);
-        JwtSecurityTokenHandler tokenHandler = new JwtSecurityTokenHandler();
+        JwtSecurityTokenHandler tokenHandler = new();
 
         return tokenHandler.WriteToken(token);
     }
