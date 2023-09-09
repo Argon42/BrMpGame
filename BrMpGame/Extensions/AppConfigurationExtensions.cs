@@ -51,7 +51,7 @@ public static class AppConfigurationExtensions
                 ValidIssuer = configuration["JwtSettings:Issuer"] ?? string.Empty,
                 ValidAudience = configuration["JwtSettings:Audience"] ?? string.Empty,
                 IssuerSigningKey =
-                    new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration["JwtSettings:Key"] ?? string.Empty))
+                    new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration["JwtSettings:Key"] ?? string.Empty)),
             };
         });
 
@@ -60,11 +60,19 @@ public static class AppConfigurationExtensions
             options.DefaultPolicy = new AuthorizationPolicyBuilder(JwtBearerDefaults.AuthenticationScheme)
                 .RequireAuthenticatedUser()
                 .Build();
+            // TODO: отделить нормальные политики
             options.AddPolicy(Roles.Admin, policy => policy.RequireRole(Roles.Admin));
             options.AddPolicy(Roles.User, policy => policy.RequireRole(Roles.User));
         });
 
-        services.AddIdentity<AppUser, IdentityRole>()
+        services.AddIdentity<AppUser, IdentityRole>(options =>
+            {
+                options.Password.RequireDigit = false;
+                options.Password.RequireLowercase = false;
+                options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequireUppercase = false;
+                options.Password.RequiredLength = 6;
+            })
             .AddEntityFrameworkStores<DataContext>()
             .AddUserManager<UserManager<AppUser>>()
             .AddSignInManager<SignInManager<AppUser>>();
