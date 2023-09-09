@@ -19,23 +19,23 @@ public class RefreshTokenService : IRefreshTokenService
         _configuration = configuration;
     }
 
-    public async Task<ActionResult<TokenModel>> RefreshToken(TokenModel? tokenModel)
+    public async Task<TokenModel> RefreshToken(TokenModel tokenModel)
     {
         if (tokenModel is null)
-            return new BadRequestObjectResult("Invalid client request");
+            throw new ArgumentNullException(nameof(tokenModel));
 
         string? accessToken = tokenModel.AccessToken;
         string? refreshToken = tokenModel.RefreshToken;
         ClaimsPrincipal? principal = _configuration.GetPrincipalFromExpiredToken(accessToken);
 
         if (principal == null)
-            return new BadRequestObjectResult("Invalid access token or refresh token");
+            throw new Exception("Invalid access token or refresh token");
 
         string? username = principal.Identity!.Name;
         AppUser? user = await _userManager.FindByNameAsync(username!);
 
         if (user == null || user.RefreshToken != refreshToken || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
-            return new BadRequestObjectResult("Invalid access token or refresh token");
+            throw new Exception("Invalid access token or refresh token");
 
         JwtSecurityToken newAccessToken = _configuration.CreateToken(principal.Claims.ToList());
         string newRefreshToken = _configuration.GenerateRefreshToken();
@@ -43,26 +43,24 @@ public class RefreshTokenService : IRefreshTokenService
         user.RefreshToken = newRefreshToken;
         await _userManager.UpdateAsync(user);
 
-        return new ObjectResult(new TokenModel
+        return new TokenModel
         {
             AccessToken = new JwtSecurityTokenHandler().WriteToken(newAccessToken),
             RefreshToken = newRefreshToken,
-        });
+        };
     }
 
-    public async Task<IActionResult> Revoke(string username)
+    public async Task Revoke(string username)
     {
         AppUser? user = await _userManager.FindByNameAsync(username);
         if (user == null)
-            return new BadRequestObjectResult("Invalid user name");
+            throw new Exception($"User {username} not found");
 
         user.RefreshToken = null;
         await _userManager.UpdateAsync(user);
-
-        return new OkResult();
     }
 
-    public async Task<IActionResult> RevokeAll()
+    public async Task RevokeAll()
     {
         List<AppUser> users = _userManager.Users.ToList();
         foreach (AppUser user in users)
@@ -70,7 +68,5 @@ public class RefreshTokenService : IRefreshTokenService
             user.RefreshToken = null;
             await _userManager.UpdateAsync(user);
         }
-
-        return new OkResult();
     }
 }

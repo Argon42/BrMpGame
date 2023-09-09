@@ -1,4 +1,5 @@
-﻿using BrMpGame.Extensions;
+﻿using System.Security.Authentication;
+using BrMpGame.Extensions;
 using BrMpGame.Models;
 using BrMpGame.Services;
 using Microsoft.AspNetCore.Identity;
@@ -23,22 +24,19 @@ public class AuthService : IAuthService
         _configuration = configuration;
     }
 
-    public async Task<ActionResult<AuthResponse>> Login(AuthRequest request)
+    public async Task<AuthResponse> Login(AuthRequest request)
     {
         AppUser? managedUser = await _userManager.FindByNameAsync(request.UserName);
 
         if (managedUser == null)
-            return new BadRequestObjectResult("Bad credentials");
+            throw new AuthenticationException("Invalid username or password");
 
         bool isPasswordValid = await _userManager.CheckPasswordAsync(managedUser, request.Password);
 
         if (!isPasswordValid)
-            return new BadRequestObjectResult("Bad credentials");
+            throw new AuthenticationException("Invalid username or password");
 
-        AppUser? user = _context.Users.FirstOrDefault(u => u.UserName == request.UserName);
-
-        if (user is null)
-            return new UnauthorizedResult();
+        AppUser user = await _context.Users.FirstAsync(u => u.UserName == request.UserName);
 
         List<string> roleIds =
             await _context.UserRoles.Where(r => r.UserId == user.Id).Select(x => x.RoleId).ToListAsync();
@@ -51,11 +49,11 @@ public class AuthService : IAuthService
 
         await _context.SaveChangesAsync();
 
-        return new OkObjectResult(new AuthResponse
+        return new AuthResponse
         {
             Username = user.UserName!,
             Token = accessToken,
             RefreshToken = user.RefreshToken,
-        });
+        };
     }
 }

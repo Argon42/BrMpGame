@@ -1,7 +1,7 @@
-﻿using BrMpGame.Features.Accounts.Auth;
+﻿using System.Security.Authentication;
+using BrMpGame.Features.Accounts.Auth;
 using BrMpGame.Models;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace BrMpGame.Features.Accounts.Registration;
@@ -18,14 +18,15 @@ public class RegistrationService : IRegistrationService
         _userManager = userManager;
         _authService = authService;
     }
-    
-    public async Task<ActionResult<AuthResponse>> Register(RegisterRequest request)
+
+    public async Task<AuthResponse> Register(RegisterRequest request)
     {
         AppUser user = new() { UserName = request.UserName };
         IdentityResult result = await _userManager.CreateAsync(user, request.Password);
 
         if (!result.Succeeded)
-            return new BadRequestObjectResult(new { Request = request, result.Errors });
+            throw new AuthenticationException(
+                $"Errors: {string.Join("\n", result.Errors.Select(error => $"{error.Code}: {error.Description}"))}");
 
         AppUser? findUser = await _context.Users.FirstOrDefaultAsync(x => x.UserName == request.UserName);
 
